@@ -1,0 +1,43 @@
+[Unit]
+Description=Laika agent: reports this server to the Laika Infrastructure Platform
+Documentation=https://github.com/laikait/lip-agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=laika-agent
+Group=laika-agent
+ExecStart=/usr/local/bin/laika-agent run
+Restart=on-failure
+RestartSec=30
+# 78: not enrolled, or the platform no longer accepts it. Restarting will not help.
+RestartPreventExitStatus=78
+
+# It reads /proc, the root filesystem's size and its own file, asks systemd
+# over D-Bus for the services, and talks HTTPS out. Nothing else.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/etc/laika-agent
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+{
+  "batchId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "host": {
+    "hostname": "web-1",
+    "os": "Debian GNU/Linux 12 (bookworm)",
+    "kernel": "6.1.0-26-amd64",
+    "uptimeSeconds": 93600
+  },
+  "samples": [
+    {
+      "sampledAt": "2026-09-27T10:01:00Z",
+      "cpu": 80,
+      "memoryUsed": 2048000000,
+      "memoryTotal": 8192000000,
+      "load1": 0.42,
+      "load5": 0.35,
+      "load15": 0.2,
+      "diskUsed": 21474836480,
+      "diskTotal": 85899345920,
+      "netIn": 10000,
+      "netOut": 5000
+    },
+    {
+      "sampledAt": "2026-09-27T10:02:00Z",
+      "cpu": 54.55,
+      "memoryUsed": 2048000000,
+      "memoryTotal": 8192000000,
+      "load1": 0.42,
+      "load5": 0.35,
+      "load15": 0.2,
+      "diskUsed": 21474836480,
+      "diskTotal": 85899345920,
+      "netIn": 10000,
+      "netOut": 5000
+    }
+  ],
+  "services": [
+    {
+      "name": "backup",
+      "state": "failed"
+    },
+    {
+      "name": "nginx",
+      "state": "running"
+    }
+  ]
+}

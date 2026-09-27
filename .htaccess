@@ -1,0 +1,3 @@
+# This repository sits under the development web server's document root.
+# It is source code, not a site: serve none of it.
+Require all denied

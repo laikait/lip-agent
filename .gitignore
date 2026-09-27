@@ -1,0 +1,8 @@
+# Builds
+/dist/
+*.exe
+/laika-agent
+
+# Never commit an enrolled agent's configuration: it holds its credential.
+agent.json
+!testdata/**/agent.json
