@@ -1,5 +1,6 @@
 // laika-agent reports a server to the Laika Infrastructure Platform: its
-// CPU, memory, load, disk, network and services, over HTTPS, outbound only.
+// CPU, memory, load, disk, network and services, and what it is and what is
+// installed on it, over HTTPS, outbound only.
 // It runs no command it was sent and opens no port.
 //
 //	laika-agent enrol --url https://platform.example/api/agent/v1 --token lie_…
@@ -30,8 +31,8 @@ import (
 	"github.com/laikait/lip-agent/internal/protocol"
 )
 
-// version is set when a release is built: -ldflags "-X main.version=0.1.0".
-var version = "0.1.0-dev"
+// version is set when a release is built: -ldflags "-X main.version=0.2.0".
+var version = "0.2.0-dev"
 
 const (
 	exitError  = 1
@@ -238,11 +239,12 @@ func run(args []string) int {
 
 	sampler := collect.NewSampler(saved.HostRoot, saved.DiskPath)
 	runner := &agent.Runner{
-		Platform: client.WithCredential(saved.Credential),
-		Machine:  sampler,
-		Services: func(ctx context.Context) ([]collect.Service, error) { return collect.Services(ctx, saved.Services) },
-		Version:  version,
-		Log:      logger,
+		Platform:  client.WithCredential(saved.Credential),
+		Machine:   sampler,
+		Services:  func(ctx context.Context) ([]collect.Service, error) { return collect.Services(ctx, saved.Services) },
+		Inventory: func(ctx context.Context) (protocol.Inventory, error) { return readInventory(ctx, sampler, logger), nil },
+		Version:   version,
+		Log:       logger,
 	}
 
 	logger.Printf("%s reporting to %s as server #%d (credential %s)", userAgent(), saved.URL, saved.ServerID, saved.Hint())
@@ -337,7 +339,56 @@ func status(args []string) int {
 		fmt.Printf("Services:   %d reported\n", len(services))
 	}
 
+	inventory := readInventory(context.Background(), sampler, log.New(io.Discard, "", 0))
+	jobs := 0
+
+	if inventory.CronJobs != nil {
+		jobs = len(*inventory.CronJobs)
+	}
+
+	fmt.Printf("Inventory:  %d cores · %d packages · %d cron jobs · %d timers · %d addresses\n",
+		inventory.Hardware.CPUCores, len(inventory.Packages), jobs, len(inventory.Timers), len(inventory.Addresses))
+
 	return 0
+}
+
+// readInventory is what the machine is and what runs on it. A part that
+// cannot be read is left out, so the platform keeps what it knew of it, and
+// said once in the log.
+func readInventory(ctx context.Context, sampler *collect.Sampler, logger *log.Logger) protocol.Inventory {
+	hardware := sampler.Hardware(ctx)
+	inventory := protocol.Inventory{Hardware: &hardware, Addresses: collect.Addresses()}
+
+	if packages, err := collect.Packages(ctx, sampler.Root); err == nil {
+		inventory.Packages = packages
+	} else {
+		logOnce(logger, "packages are not reported: "+err.Error())
+	}
+
+	if jobs, err := collect.CronJobs(sampler.Root); err == nil {
+		inventory.CronJobs = &jobs
+	} else {
+		logOnce(logger, "cron jobs are not reported: "+err.Error())
+	}
+
+	if timers, err := collect.Timers(ctx); err == nil {
+		inventory.Timers = timers
+	} else {
+		logOnce(logger, "timers are not reported: "+err.Error())
+	}
+
+	return inventory
+}
+
+// said is what logOnce has said: a failure is worth a line in the journal
+// once, not every hour.
+var said = map[string]bool{}
+
+func logOnce(logger *log.Logger, message string) {
+	if !said[message] {
+		said[message] = true
+		logger.Print(message)
+	}
 }
 
 func userAgent() string {

@@ -1,0 +1,77 @@
+{
+  "inventoryId": "9a8b7c6d5e4f30211203f4e5d6c7b8a9",
+  "hardware": {
+    "cpuCores": 4,
+    "memoryBytes": 8192000000,
+    "architecture": "x86_64",
+    "virtualization": "kvm"
+  },
+  "addresses": [
+    {
+      "interface": "eth0",
+      "address": "203.0.113.10"
+    },
+    {
+      "interface": "eth0",
+      "address": "2001:db8::10"
+    }
+  ],
+  "packages": [
+    {
+      "name": "nginx",
+      "version": "1.22.1-9",
+      "architecture": "amd64",
+      "manager": "dpkg"
+    },
+    {
+      "name": "openssl",
+      "version": "3.0.11-1~deb12u2",
+      "architecture": "amd64",
+      "manager": "dpkg"
+    }
+  ],
+  "cronJobs": [
+    {
+      "schedule": "17 * * * *",
+      "user": "root",
+      "program": "cd",
+      "lineHash": "d863c50e45f88e757b95a91fa978e1e9e50b35fefad7fdb98d71592706a2ab49",
+      "file": "/etc/crontab"
+    },
+    {
+      "schedule": "30 2 * * *",
+      "user": "root",
+      "program": "/usr/local/bin/db-backup",
+      "lineHash": "afa51dbf01196ac0d348d962b88a93bdf321e05afd5190442eb6bff3595f40a2",
+      "file": "/etc/crontab"
+    },
+    {
+      "schedule": "@reboot",
+      "user": "root",
+      "program": "/usr/local/bin/warm-cache",
+      "lineHash": "3dfd6be07b8e5377687f19b25192b530b3194dfc79cb552cd8d424592d74e837",
+      "file": "/etc/crontab"
+    },
+    {
+      "schedule": "09,39 * * * *",
+      "user": "root",
+      "program": "/usr/lib/php/sessionclean",
+      "lineHash": "e0de51a5403098a92bbba2758ae406631bb01511d1b2fa7e3ebf699041025475",
+      "file": "/etc/cron.d/php"
+    },
+    {
+      "schedule": "@daily",
+      "user": "root",
+      "program": "/etc/cron.daily/logrotate",
+      "lineHash": "45295c818736e8eafafcdf764b494f91221a39f5fd8dd610c5692a022dd6b461",
+      "file": "/etc/cron.daily"
+    }
+  ],
+  "timers": [
+    {
+      "name": "logrotate",
+      "schedule": "*-*-* 00:00:00",
+      "unit": "logrotate.service"
+    }
+  ]
+}

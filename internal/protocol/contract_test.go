@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"os"
@@ -60,16 +61,37 @@ func TestContract(t *testing.T) {
 
 	services := collect.ParseSystemctl([]byte("nginx.service loaded active running Web server\n● backup.service loaded failed failed Nightly backup\n"), nil)
 
+	// The inventory, from the fixture host and the parsers' own inputs. What
+	// depends on the machine running this test (its architecture, its
+	// virtualisation, its addresses) is fixed, as the disk is above.
+	hardware := sampler.Hardware(context.Background())
+	hardware.Architecture, hardware.Virtualization = "x86_64", "kvm"
+
+	jobs, err := collect.CronJobs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inventory := Inventory{
+		InventoryID: "9a8b7c6d5e4f30211203f4e5d6c7b8a9",
+		Hardware:    &hardware,
+		Addresses:   []collect.Address{{Interface: "eth0", Address: "203.0.113.10"}, {Interface: "eth0", Address: "2001:db8::10"}},
+		Packages:    collect.ParseDpkg([]byte("ii \tnginx\t1.22.1-9\tamd64\nii \topenssl\t3.0.11-1~deb12u2\tamd64\nrc \tapache2\t2.4.57-2\tamd64\n")),
+		CronJobs:    &jobs,
+		Timers:      collect.ParseTimers([]byte("Id=logrotate.timer\nUnit=logrotate.service\nTimersMonotonic=\nTimersCalendar={ OnCalendar=*-*-* 00:00:00 ; next_elapse=n/a }\n")),
+	}
+
 	recordings := map[string]any{
 		"register.json": Registration{
 			Hostname:     host.Hostname,
 			OS:           host.OS,
 			Kernel:       host.Kernel,
-			Version:      "0.1.0",
-			Capabilities: []string{"metrics.read", "service.status"},
+			Version:      "0.2.0",
+			Capabilities: []string{"metrics.read", "service.status", "inventory.read"},
 		},
-		"heartbeat.json": Heartbeat{Version: "0.1.0", Capabilities: []string{"metrics.read", "service.status"}},
+		"heartbeat.json": Heartbeat{Version: "0.2.0", Capabilities: []string{"metrics.read", "service.status", "inventory.read"}},
 		"metrics.json":   Batch{BatchID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0", Host: &host, Samples: samples, Services: services},
+		"inventory.json": inventory,
 	}
 
 	for name, payload := range recordings {

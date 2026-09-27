@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
@@ -11,8 +13,9 @@ import (
 )
 
 // Capabilities are the named operations this agent advertises. No shell,
-// and no commands until Phase 4 (plans/agent.md).
-var Capabilities = []string{"metrics.read", "service.status"}
+// and no commands until Phase 4 (plans/agent.md). The order is the
+// platform's, which answers them in its own order.
+var Capabilities = []string{"metrics.read", "service.status", "inventory.read"}
 
 // ErrRevoked means the platform no longer accepts the credential: the
 // server was removed, or the agent's record went. Only enrolling again
@@ -23,6 +26,7 @@ var ErrRevoked = errors.New("the platform no longer accepts this agent's credent
 type Platform interface {
 	Heartbeat(ctx context.Context, heartbeat protocol.Heartbeat) (protocol.Answer, error)
 	Metrics(ctx context.Context, batch protocol.Batch) (protocol.Answer, error)
+	Inventory(ctx context.Context, inventory protocol.Inventory) (protocol.Answer, error)
 }
 
 // Machine is what the loop reads.
@@ -36,9 +40,12 @@ type Runner struct {
 	Platform Platform
 	Machine  Machine
 	Services func(ctx context.Context) ([]collect.Service, error)
-	Version  string
-	Log      *log.Logger
-	Now      func() time.Time
+	// Inventory reads what the machine is and what runs on it, without an
+	// id. Nil sends none.
+	Inventory func(ctx context.Context) (protocol.Inventory, error)
+	Version   string
+	Log       *log.Logger
+	Now       func() time.Time
 
 	outbox        *Outbox
 	interval      time.Duration
@@ -47,6 +54,13 @@ type Runner struct {
 	retryAt       time.Time
 	backoff       time.Duration
 	servicesErr   string
+
+	inventoryEvery  time.Duration
+	inventoryNext   time.Time
+	inventoryWaits  *protocol.Inventory
+	inventoryHash   string
+	inventorySent   string
+	inventorySentAt time.Time
 }
 
 const (
@@ -54,6 +68,14 @@ const (
 	minInterval     = 15 * time.Second
 	maxInterval     = time.Hour
 	maxBackoff      = 10 * time.Minute
+
+	defaultInventory = time.Hour
+	minInventory     = 5 * time.Minute
+	maxInventory     = 24 * time.Hour
+
+	// An inventory that has not changed is sent again after this, so the
+	// platform knows it is current rather than forgotten.
+	inventoryStale = 24 * time.Hour
 )
 
 func (r *Runner) init() {
@@ -67,6 +89,10 @@ func (r *Runner) init() {
 
 	if r.heartbeat == 0 {
 		r.heartbeat = defaultInterval
+	}
+
+	if r.inventoryEvery == 0 {
+		r.inventoryEvery = defaultInventory
 	}
 
 	if r.Now == nil {
@@ -91,6 +117,11 @@ func (r *Runner) Run(ctx context.Context) error {
 	r.Log.Printf("running: a sample every %s", r.interval)
 
 	if err := r.Heartbeat(ctx); errors.Is(err, ErrRevoked) {
+		return err
+	}
+
+	// What the machine is, straight away rather than after the first minute.
+	if err := r.SendInventory(ctx); errors.Is(err, ErrRevoked) {
 		return err
 	}
 
@@ -141,7 +172,80 @@ func (r *Runner) Tick(ctx context.Context) error {
 		}
 	}
 
-	return r.Flush(ctx)
+	if err := r.Flush(ctx); err != nil {
+		return err
+	}
+
+	return r.SendInventory(ctx)
+}
+
+// SendInventory looks at the machine when it is time to, and sends what it
+// found if it changed since the last one sent, or a day has passed. An
+// inventory keeps its id until the platform acknowledges it, like a batch,
+// so a lost reply's retry is a duplicate there, not a second diff.
+//
+// A platform that refuses it for good (404 from one older than the call, or
+// 422) is not asked again for a day, unless the machine changes first.
+func (r *Runner) SendInventory(ctx context.Context) error {
+	r.init()
+
+	if r.Inventory == nil {
+		return nil
+	}
+
+	now := r.now()
+
+	if r.inventoryWaits == nil {
+		if now.Before(r.inventoryNext) {
+			return nil
+		}
+
+		r.inventoryNext = now.Add(r.inventoryEvery)
+
+		inventory, err := r.Inventory(ctx)
+		if err != nil {
+			r.Log.Printf("cannot read this machine's inventory: %v", err)
+
+			return nil
+		}
+
+		hash := inventoryHash(inventory)
+		if hash == r.inventorySent && now.Sub(r.inventorySentAt) < inventoryStale {
+			return nil
+		}
+
+		inventory.InventoryID = NewBatchID()
+		r.inventoryWaits, r.inventoryHash = &inventory, hash
+	}
+
+	if now.Before(r.retryAt) {
+		return nil
+	}
+
+	answer, err := r.Platform.Inventory(ctx, *r.inventoryWaits)
+
+	sent := func() {
+		r.inventorySent, r.inventorySentAt, r.inventoryWaits = r.inventoryHash, now, nil
+	}
+
+	if protocol.Rejected(err) {
+		r.Log.Printf("the platform refused the inventory, which is not sent again for a day unless the machine changes: %v", err)
+		sent()
+
+		return nil
+	}
+
+	return r.after(answer, err, "inventory", sent)
+}
+
+// inventoryHash is what an inventory says, without its id: the same machine
+// twice hashes the same.
+func inventoryHash(inventory protocol.Inventory) string {
+	inventory.InventoryID = ""
+	encoded, _ := json.Marshal(inventory)
+	sum := sha256.Sum256(encoded)
+
+	return string(sum[:])
 }
 
 // Heartbeat says the agent is alive, and what it is.
@@ -234,6 +338,11 @@ func (r *Runner) intervals(answer protocol.Answer) {
 
 	if answer.HeartbeatSeconds > 0 {
 		r.heartbeat = bounded(time.Duration(answer.HeartbeatSeconds) * time.Second)
+	}
+
+	if answer.InventorySeconds > 0 {
+		every := time.Duration(answer.InventorySeconds) * time.Second
+		r.inventoryEvery = min(max(every, minInventory), maxInventory)
 	}
 }
 

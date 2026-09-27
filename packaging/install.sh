@@ -17,7 +17,7 @@
 # download is checked against the release's SHA256SUMS before it is used.
 set -eu
 
-VERSION="${LAIKA_AGENT_VERSION:-0.1.0}"
+VERSION="${LAIKA_AGENT_VERSION:-0.2.0}"
 RELEASES="https://github.com/laikait/lip-agent/releases/download"
 BIN=/usr/local/bin/laika-agent
 UNIT=/etc/systemd/system/laika-agent.service

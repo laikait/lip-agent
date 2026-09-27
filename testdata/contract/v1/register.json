@@ -2,9 +2,10 @@
   "hostname": "web-1",
   "os": "Debian GNU/Linux 12 (bookworm)",
   "kernel": "6.1.0-26-amd64",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "capabilities": [
     "metrics.read",
-    "service.status"
+    "service.status",
+    "inventory.read"
   ]
 }

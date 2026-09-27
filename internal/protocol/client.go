@@ -1,6 +1,7 @@
 // Package protocol speaks version 1 of the agent protocol
-// (plans/agent.md in the platform's repository): register, heartbeat and
-// metrics, over HTTPS, with the credential in a header and never the URL.
+// (plans/agent.md in the platform's repository): register, heartbeat,
+// metrics and inventory, over HTTPS, with the credential in a header and
+// never the URL.
 package protocol
 
 import (
@@ -74,11 +75,26 @@ type Batch struct {
 	Services []collect.Service `json:"services,omitempty"`
 }
 
+// Inventory is what the machine is and what runs on it, under an id the
+// platform remembers, like a batch's. A list left out (nil) was not read:
+// the platform keeps what it knew. CronJobs is a pointer so that "none"
+// (an empty list) and "not read" (nil) stay different on the wire.
+type Inventory struct {
+	InventoryID string             `json:"inventoryId"`
+	Hardware    *collect.Hardware  `json:"hardware,omitempty"`
+	Addresses   []collect.Address  `json:"addresses,omitempty"`
+	Packages    []collect.Package  `json:"packages,omitempty"`
+	CronJobs    *[]collect.CronJob `json:"cronJobs,omitempty"`
+	Timers      []collect.Timer    `json:"timers,omitempty"`
+}
+
 // Answer is what every reply carries: how often to call, and whether a
-// batch was one already received.
+// batch was one already received. InventorySeconds is 0 from a platform
+// older than the inventory call.
 type Answer struct {
 	HeartbeatSeconds int    `json:"heartbeatSeconds"`
 	MetricsSeconds   int    `json:"metricsSeconds"`
+	InventorySeconds int    `json:"inventorySeconds"`
 	Protocol         int    `json:"protocol"`
 	ServerTime       string `json:"serverTime"`
 	Accepted         bool   `json:"accepted"`
@@ -244,6 +260,12 @@ func (c *Client) Heartbeat(ctx context.Context, heartbeat Heartbeat) (Answer, er
 // Metrics sends a batch.
 func (c *Client) Metrics(ctx context.Context, batch Batch) (Answer, error) {
 	return c.call(ctx, "metrics", AgentHeader, c.credential, batch, nil)
+}
+
+// Inventory sends what the machine is and what runs on it. A platform older
+// than the call answers 404, which Rejected() reports.
+func (c *Client) Inventory(ctx context.Context, inventory Inventory) (Answer, error) {
+	return c.call(ctx, "inventory", AgentHeader, c.credential, inventory, nil)
 }
 
 func (c *Client) call(ctx context.Context, name, header, secret string, body any, into any) (Answer, error) {
