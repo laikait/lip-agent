@@ -29,6 +29,16 @@ type Config struct {
 	// reports the ones running or failed.
 	Services []string `json:"services,omitempty"`
 
+	// Operations is what the platform may ask this machine to do: each
+	// operation to the names it may be asked about, for example
+	//
+	//	"operations": {"service.restart": ["nginx", "php8.3-fpm"], "package.status": ["*"]}
+	//
+	// Nothing listed here is advertised to the platform, and nothing is done
+	// that is not listed. "*" (any name) is for operations that change
+	// nothing.
+	Operations map[string][]string `json:"operations,omitempty"`
+
 	// HostRoot is where the host's filesystem is, when the agent runs in a
 	// container ("/host"). DiskPath is the filesystem reported, "/" by default.
 	HostRoot string `json:"hostRoot,omitempty"`

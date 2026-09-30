@@ -1,6 +1,6 @@
 // Package protocol speaks version 1 of the agent protocol
 // (plans/agent.md in the platform's repository): register, heartbeat,
-// metrics and inventory, over HTTPS, with the credential in a header and
+// metrics, inventory and commands, over HTTPS, with the credential in a header and
 // never the URL.
 package protocol
 
@@ -268,22 +268,77 @@ func (c *Client) Inventory(ctx context.Context, inventory Inventory) (Answer, er
 	return c.call(ctx, "inventory", AgentHeader, c.credential, inventory, nil)
 }
 
+// WireCommand is one thing the platform asks this agent to do: an operation's
+// name and its one named parameter. Never a command line.
+type WireCommand struct {
+	CommandID  string            `json:"commandId"`
+	Operation  string            `json:"operation"`
+	Parameters map[string]string `json:"parameters"`
+	ExpiresAt  string            `json:"expiresAt"`
+}
+
+// Commands is what a poll answers: what is waiting (each is handed over
+// once), and how long to wait before asking again. PollSeconds is 0 from a
+// platform older than the call.
+type Commands struct {
+	Commands    []WireCommand `json:"commands"`
+	PollSeconds int           `json:"pollSeconds"`
+}
+
+// CommandResult is what came of a command. Status is succeeded or failed.
+type CommandResult struct {
+	Status   string `json:"status"`
+	ExitCode *int   `json:"exitCode,omitempty"`
+	Output   string `json:"output"`
+}
+
+// Commands asks what is waiting. A platform older than the call answers 404,
+// which Rejected() reports.
+func (c *Client) Commands(ctx context.Context) (Commands, error) {
+	var commands Commands
+
+	_, err := c.do(ctx, http.MethodGet, "commands", AgentHeader, c.credential, nil, &commands)
+
+	return commands, err
+}
+
+// Result says what came of a command. False means the platform ignored it
+// (unknown, not served, or answered already): move on.
+func (c *Client) Result(ctx context.Context, commandID string, result CommandResult) (bool, error) {
+	answer, err := c.do(ctx, http.MethodPost, "commands/"+url.PathEscape(commandID)+"/result", AgentHeader, c.credential, result, nil)
+
+	return answer.Accepted, err
+}
+
 func (c *Client) call(ctx context.Context, name, header, secret string, body any, into any) (Answer, error) {
+	return c.do(ctx, http.MethodPost, name, header, secret, body, into)
+}
+
+func (c *Client) do(ctx context.Context, method, name, header, secret string, body any, into any) (Answer, error) {
 	if secret == "" {
 		return Answer{}, errors.New("no credential: enrol this agent first")
 	}
 
-	payload, err := json.Marshal(body)
+	var reader io.Reader
+
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return Answer{}, err
+		}
+
+		reader = bytes.NewReader(payload)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, method, c.base+"/"+name, reader)
 	if err != nil {
 		return Answer{}, err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/"+name, bytes.NewReader(payload))
-	if err != nil {
-		return Answer{}, err
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
 	}
 
-	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", c.userAgent)
 	request.Header.Set(header, secret)

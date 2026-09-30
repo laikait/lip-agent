@@ -81,15 +81,21 @@ func TestContract(t *testing.T) {
 		Timers:      collect.ParseTimers([]byte("Id=logrotate.timer\nUnit=logrotate.service\nTimersMonotonic=\nTimersCalendar={ OnCalendar=*-*-* 00:00:00 ; next_elapse=n/a }\n")),
 	}
 
+	zero := 0
+
 	recordings := map[string]any{
 		"register.json": Registration{
 			Hostname:     host.Hostname,
 			OS:           host.OS,
 			Kernel:       host.Kernel,
-			Version:      "0.2.0",
+			Version:      "0.3.0",
 			Capabilities: []string{"metrics.read", "service.status", "inventory.read"},
 		},
-		"heartbeat.json": Heartbeat{Version: "0.2.0", Capabilities: []string{"metrics.read", "service.status", "inventory.read"}},
+		"heartbeat.json": Heartbeat{Version: "0.3.0", Capabilities: []string{"metrics.read", "service.status", "inventory.read"}},
+		// A machine whose file allows two operations says so in its heartbeat.
+		"heartbeat-operations.json": Heartbeat{Version: "0.3.0", Capabilities: []string{"metrics.read", "service.status", "inventory.read", "service.restart", "package.status", "package.update", "backup.create"}},
+		// What it says of a command it did.
+		"result.json":    CommandResult{Status: "succeeded", ExitCode: &zero, Output: "restarted nginx.service; it is active"},
 		"metrics.json":   Batch{BatchID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0", Host: &host, Samples: samples, Services: services},
 		"inventory.json": inventory,
 	}

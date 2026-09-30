@@ -1,7 +1,9 @@
 // laika-agent reports a server to the Laika Infrastructure Platform: its
 // CPU, memory, load, disk, network and services, and what it is and what is
 // installed on it, over HTTPS, outbound only.
-// It runs no command it was sent and opens no port.
+// It opens no port, runs no shell and no command line it was sent; the few
+// named operations it may do (restart a service, read a package) are only
+// those its own file allows.
 //
 //	laika-agent enrol --url https://platform.example/api/agent/v1 --token lie_…
 //	laika-agent run
@@ -28,11 +30,12 @@ import (
 	"github.com/laikait/lip-agent/internal/agent"
 	"github.com/laikait/lip-agent/internal/collect"
 	"github.com/laikait/lip-agent/internal/config"
+	"github.com/laikait/lip-agent/internal/operate"
 	"github.com/laikait/lip-agent/internal/protocol"
 )
 
 // version is set when a release is built: -ldflags "-X main.version=0.2.0".
-var version = "0.2.0-dev"
+var version = "0.3.0-dev"
 
 const (
 	exitError  = 1
@@ -145,7 +148,7 @@ func enrol(args []string) int {
 		OS:           host.OS,
 		Kernel:       host.Kernel,
 		Version:      version,
-		Capabilities: agent.Capabilities,
+		Capabilities: agent.Advertise(nil),
 	})
 
 	if protocol.Unauthorized(err) {
@@ -247,6 +250,9 @@ func run(args []string) int {
 		Log:       logger,
 	}
 
+	operator := &operate.Operator{Allowed: saved.Operations, Exec: operate.System{}}
+	runner.Capabilities = agent.Advertise(operator.Capabilities())
+
 	logger.Printf("%s reporting to %s as server #%d (credential %s)", userAgent(), saved.URL, saved.ServerID, saved.Hint())
 
 	if *once {
@@ -256,7 +262,31 @@ func run(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := runner.Run(ctx); errors.Is(err, agent.ErrRevoked) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// What the platform asks for is polled beside the reporting. If either
+	// finds the credential refused, both stop.
+	revoked := make(chan struct{})
+
+	go func() {
+		commander := &agent.Commander{Platform: client.WithCredential(saved.Credential), Operator: operator, Log: logger}
+
+		if err := commander.Run(ctx); errors.Is(err, agent.ErrRevoked) {
+			close(revoked)
+			cancel()
+		}
+	}()
+
+	err = runner.Run(ctx)
+
+	select {
+	case <-revoked:
+		return exitConfig
+	default:
+	}
+
+	if errors.Is(err, agent.ErrRevoked) {
 		return exitConfig
 	}
 
@@ -317,6 +347,12 @@ func status(args []string) int {
 	fmt.Printf("%s\n", userAgent())
 	fmt.Printf("Platform:   %s\n", saved.URL)
 	fmt.Printf("Server:     \"%s\" (#%d), agent #%d, credential %s\n", saved.ServerName, saved.ServerID, saved.AgentID, saved.Hint())
+	if names := (&operate.Operator{Allowed: saved.Operations}).Capabilities(); len(names) > 0 {
+		fmt.Printf("May do:     %s (from \"operations\" in %s)\n", strings.Join(names, ", "), *path)
+	} else {
+		fmt.Printf("May do:     nothing the platform asks (no \"operations\" in %s)\n", *path)
+	}
+
 	fmt.Printf("Host:       %s · %s · %s · up %ds\n", host.Hostname, host.OS, host.Kernel, host.UptimeSeconds)
 
 	if _, _, err := sampler.Sample(time.Now()); err != nil {

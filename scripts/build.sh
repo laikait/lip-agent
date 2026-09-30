@@ -2,7 +2,7 @@
 # Build the release binaries: static Linux builds for amd64 and arm64, and
 # their SHA256SUMS, into dist/.
 #
-#   sh scripts/build.sh 0.2.0
+#   sh scripts/build.sh 0.3.0
 set -eu
 
 VERSION="${1:?usage: scripts/build.sh <version>}"

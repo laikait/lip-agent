@@ -31,3 +31,23 @@ func TestTheInstallerWritesTheUnitAsItIs(t *testing.T) {
 		t.Fatal("install.sh writes a different unit from laika-agent.service")
 	}
 }
+
+func TestThePackageUpdateUnitTakesTheNameAsOneArgumentAndRunsNoShell(t *testing.T) {
+	unit, err := os.ReadFile("laika-package-update@.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	text := string(unit)
+
+	// %I is the unescaped instance, and systemd hands it over as one word.
+	if !strings.Contains(text, "-- %I\n") || strings.Contains(text, "%i") {
+		t.Fatal("the package name must reach the package manager as the last argument after --, unescaped (%I)")
+	}
+
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "Exec") && (strings.Contains(line, "sh -c") || strings.Contains(line, "bash") || strings.Contains(line, ";") || strings.Contains(line, "&&")) {
+			t.Fatalf("a shell in %q", line)
+		}
+	}
+}

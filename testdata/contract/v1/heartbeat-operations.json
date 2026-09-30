@@ -1,0 +1,12 @@
+{
+  "version": "0.3.0",
+  "capabilities": [
+    "metrics.read",
+    "service.status",
+    "inventory.read",
+    "service.restart",
+    "package.status",
+    "package.update",
+    "backup.create"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "status": "succeeded",
+  "exitCode": 0,
+  "output": "restarted nginx.service; it is active"
+}

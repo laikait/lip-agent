@@ -1,0 +1,17 @@
+[Unit]
+Description=Update the package %I (started by the Laika agent, when its owner allowed it)
+Documentation=https://github.com/laikait/lip-agent
+
+# For Debian and Ubuntu. The agent starts "laika-package-update@<package>.service"
+# (the package's name escaped like systemd-escape does) and this unit, which
+# runs as root, does the work: the agent itself has no privileges. Copy it to
+# /etc/systemd/system/, then allow the agent's user to start it for the
+# packages you list (README, "Operations"). For Fedora and Red Hat replace
+# both commands with "/usr/bin/dnf -y upgrade -- %I"; Alpine has "apk add -u %I".
+
+[Service]
+Type=oneshot
+Environment=DEBIAN_FRONTEND=noninteractive
+TimeoutStartSec=600
+ExecStartPre=/usr/bin/apt-get update -q
+ExecStart=/usr/bin/apt-get install -y -q --only-upgrade -- %I

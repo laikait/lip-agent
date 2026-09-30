@@ -3,13 +3,16 @@
 The server agent of the Laika Infrastructure Platform. It runs on a Linux
 server and reports it: CPU, memory, load, disk, network, OS, kernel, uptime
 and systemd services, and (from 0.2.0) its inventory: hardware, addresses,
-installed packages, cron jobs and systemd timers.
+installed packages, cron jobs and systemd timers. (From 0.3.0, the few
+operations its owner allows.)
 
 - **Outbound only.** It calls the platform over HTTPS every minute, and never
   opens a port.
-- **It runs nothing it is sent.** It advertises three named operations,
-  `metrics.read`, `service.status` and `inventory.read`, and has no shell and
-  no commands.
+- **No shell, and no command line from the platform.** By default it advertises
+  three reading operations, `metrics.read`, `service.status` and
+  `inventory.read`, and does nothing else. From 0.3.0 the platform can ask for
+  a named operation (`service.restart`, `package.status`, `package.update`,
+  `backup.create`), but only for the names **this machine's own file allows** (see "Operations").
 - **A cron line's arguments never leave the server.** It sends a job's
   schedule, user and program, and a SHA-256 of the whole line, so the platform
   sees that a line changed without seeing what it says.
@@ -85,6 +88,68 @@ Every command takes `--config FILE`.
 - **Plain HTTP only to this machine.** The credential goes in a header, never
   the URL, and never to anywhere a redirect points.
 
+## Operations
+
+From 0.3.0. The platform can ask this agent to restart a service, read or update a
+package, or run a backup job, after its owner's policy and a second person's approval. The agent is
+the last gate, and the machine's owner holds it: **nothing is advertised or
+done unless `/etc/laika-agent/agent.json` lists it**.
+
+```json
+"operations": {
+  "service.restart": ["nginx", "php8.3-fpm"],
+  "package.status": ["*"],
+  "package.update": ["openssl"],
+  "backup.create": ["nightly-backup"]
+}
+```
+
+- Each operation lists the names it may be asked about. `*` (any name) counts
+  **only for `package.status`**, which reads; for the others it allows nothing. An operation with no list is not advertised, and is
+  refused if asked for anyway.
+- The platform sends an operation's name and one parameter (a service, a
+  package). The agent checks it is a plain name (letters, digits and `@ + . _ : -`,
+  starting with a letter or digit, at most 120), checks the file allows it, and
+  builds the argument list itself: `systemctl restart --no-ask-password <unit>.service`,
+  then `systemctl is-active`. **No shell, and never a string from the platform run
+  as a command.**
+- **Polling only:** every 15 seconds (as the platform asks) it does `GET
+  /commands`. A command is handed over once; the agent runs it once (a repeat id
+  is ignored), then answers `POST /commands/{id}/result` with success or failure,
+  the exit code and up to 8 KB of output. The platform redacts the output. An
+  expired command is not run. An agent allowed to do nothing does not poll.
+- **Permission is the system's.** The service runs as the unprivileged
+  `laika-agent` user with `NoNewPrivileges`, so it cannot use sudo. To let it
+  restart exactly the units the file lists, give that user a polkit rule for the
+  same names, for example `/etc/polkit-1/rules.d/50-laika-agent.rules`:
+
+  ```js
+  polkit.addRule(function(action, subject) {
+      if (subject.user == "laika-agent" &&
+          action.id == "org.freedesktop.systemd1.manage-units" &&
+          ["nginx.service", "php8.3-fpm.service"].indexOf(action.lookup("unit")) >= 0) {
+          return polkit.Result.YES;
+      }
+  });
+  ```
+
+  Without the rule the restart is refused by the system and the platform is told
+  it failed, with the reason.
+- **`package.update`** does not run a package manager as the agent. It starts
+  the systemd template unit `laika-package-update@<package>.service` (the name
+  escaped the way `systemd-escape` does), which you install from
+  `packaging/laika-package-update@.service` (Debian and Ubuntu; the file says
+  what to change for others) and which runs as root. Give the agent's user a
+  polkit rule for the same packages: the unit for `openssl` is
+  `laika-package-update@openssl.service`. The agent then reports the version
+  now installed. Up to 10 minutes.
+- **`backup.create`** starts one of your own backup jobs, a systemd service you
+  wrote (`nightly-backup.service`), and waits for it to end; the job decides
+  what a backup is. Allow it with a polkit rule for that unit. Up to 20
+  minutes. The platform accepts the answer until 30 minutes after it queued the
+  command, and the agent handles one command at a time.
+- `laika-agent status` says what this machine may do.
+
 ## The inventory
 
 Looked at when the agent starts, then every hour (or as the platform asks,
@@ -118,18 +183,18 @@ the platform acknowledges it.
 
 ```sh
 go test ./...
-sh scripts/build.sh 0.2.0   # dist/: laika-agent-linux-{amd64,arm64}, SHA256SUMS, install.sh
+sh scripts/build.sh 0.3.0   # dist/: laika-agent-linux-{amd64,arm64}, SHA256SUMS, install.sh
 ```
 
 The collectors are tested on any OS against `testdata/host`, a fixture root
 (`/proc`, and `/etc` for cron).
 
 **The contract:** `internal/protocol/contract_test.go` makes the register,
-heartbeat, metrics and inventory payloads from that fixture and compares them with
+heartbeat (with and without operations), metrics, inventory and command-result payloads from that fixture and compares them with
 `testdata/contract/v1/*.json`. The platform keeps a copy of those files in
 `tests/Platform/Fixtures/AgentContract/v1/` and replays them against its
 endpoints. It also keeps each earlier release's recordings, frozen in
-`v1/<version>/` (`v1/0.1.0/` today), so an agent still in the field keeps
+`v1/<version>/` (`v1/0.1.0/` and `v1/0.2.0/` today), so an agent still in the field keeps
 working. After a deliberate change to what the agent sends:
 1. before releasing a new version, freeze the platform's current copies in
    `v1/<the version being replaced>/`;

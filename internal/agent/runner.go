@@ -9,13 +9,35 @@ import (
 	"time"
 
 	"github.com/laikait/lip-agent/internal/collect"
+	"github.com/laikait/lip-agent/internal/operate"
 	"github.com/laikait/lip-agent/internal/protocol"
 )
 
-// Capabilities are the named operations this agent advertises. No shell,
-// and no commands until Phase 4 (plans/agent.md). The order is the
-// platform's, which answers them in its own order.
+// Capabilities are the named operations every agent advertises: reading. The
+// order is the platform's, which answers them in its own order. The
+// operations that change or ask something of the machine are added only when
+// the machine's own file allows them (Runner.Capabilities, operate.Operator).
 var Capabilities = []string{"metrics.read", "service.status", "inventory.read"}
+
+// Advertise is the base capabilities and the operations this machine allows,
+// in the platform's order.
+func Advertise(operations []string) []string {
+	have := map[string]bool{}
+
+	for _, name := range append(append([]string{}, Capabilities...), operations...) {
+		have[name] = true
+	}
+
+	var names []string
+
+	for _, name := range operate.Order {
+		if have[name] {
+			names = append(names, name)
+		}
+	}
+
+	return names
+}
 
 // ErrRevoked means the platform no longer accepts the credential: the
 // server was removed, or the agent's record went. Only enrolling again
@@ -46,6 +68,9 @@ type Runner struct {
 	Version   string
 	Log       *log.Logger
 	Now       func() time.Time
+	// Capabilities is what the heartbeat says this agent can do. Nil says
+	// the base ones.
+	Capabilities []string
 
 	outbox        *Outbox
 	interval      time.Duration
@@ -256,7 +281,7 @@ func (r *Runner) Heartbeat(ctx context.Context) error {
 		return nil
 	}
 
-	answer, err := r.Platform.Heartbeat(ctx, protocol.Heartbeat{Version: r.Version, Capabilities: Capabilities})
+	answer, err := r.Platform.Heartbeat(ctx, protocol.Heartbeat{Version: r.Version, Capabilities: r.advertised()})
 
 	return r.after(answer, err, "heartbeat", func() { r.lastHeartbeat = r.now() })
 }
@@ -364,6 +389,14 @@ func (r *Runner) services(ctx context.Context) []collect.Service {
 	}
 
 	return services
+}
+
+func (r *Runner) advertised() []string {
+	if r.Capabilities != nil {
+		return r.Capabilities
+	}
+
+	return Capabilities
 }
 
 func (r *Runner) now() time.Time {

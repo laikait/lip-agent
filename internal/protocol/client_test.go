@@ -126,3 +126,52 @@ func TestNoCredentialNoCall(t *testing.T) {
 		t.Fatal("called without a credential")
 	}
 }
+
+func TestCommandsAreAskedForAndAnsweredByCredentialOnly(t *testing.T) {
+	var polled, answered *http.Request
+	var sent map[string]any
+
+	platform := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			polled = r
+			_, _ = io.WriteString(w, `{"data":{"commands":[{"commandId":"cmd_abc","operation":"service.restart","parameters":{"service":"nginx"},"expiresAt":"2026-10-01T10:15:00Z"}],"pollSeconds":15,"protocol":1}}`)
+
+			return
+		}
+
+		answered = r
+		_ = json.NewDecoder(r.Body).Decode(&sent)
+		_, _ = io.WriteString(w, `{"data":{"accepted":false,"protocol":1}}`)
+	}))
+	defer platform.Close()
+
+	client, _ := NewClient(platform.URL, "", "laika-agent/test")
+	client = client.WithCredential("lia_secret")
+
+	commands, err := client.Commands(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if polled.URL.Path != "/api/agent/v1/commands" || polled.Header.Get(AgentHeader) != "lia_secret" || polled.ContentLength > 0 {
+		t.Fatalf("polled %s with %v", polled.URL, polled.Header)
+	}
+
+	if len(commands.Commands) != 1 || commands.PollSeconds != 15 || commands.Commands[0].Parameters["service"] != "nginx" || commands.Commands[0].CommandID != "cmd_abc" {
+		t.Fatalf("%+v", commands)
+	}
+
+	code := 0
+	accepted, err := client.Result(context.Background(), "cmd_abc", CommandResult{Status: "succeeded", ExitCode: &code, Output: "done"})
+	if err != nil || accepted {
+		t.Fatalf("accepted=%v err=%v: an ignored answer is not an error", accepted, err)
+	}
+
+	if answered.URL.Path != "/api/agent/v1/commands/cmd_abc/result" || answered.Header.Get(AgentHeader) != "lia_secret" || strings.Contains(answered.URL.String(), "lia_") {
+		t.Fatalf("answered %s", answered.URL)
+	}
+
+	if sent["status"] != "succeeded" || sent["output"] != "done" || sent["exitCode"] != float64(0) {
+		t.Fatalf("sent %v", sent)
+	}
+}
