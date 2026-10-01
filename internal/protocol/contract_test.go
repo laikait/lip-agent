@@ -93,9 +93,18 @@ func TestContract(t *testing.T) {
 		},
 		"heartbeat.json": Heartbeat{Version: "0.3.0", Capabilities: []string{"metrics.read", "service.status", "inventory.read"}},
 		// A machine whose file allows two operations says so in its heartbeat.
-		"heartbeat-operations.json": Heartbeat{Version: "0.3.0", Capabilities: []string{"metrics.read", "service.status", "inventory.read", "service.restart", "package.status", "package.update", "backup.create"}},
+		"heartbeat-operations.json": Heartbeat{Version: "0.3.0", Capabilities: []string{"metrics.read", "service.status", "inventory.read", "service.restart", "package.status", "package.update", "backup.create", "config.fingerprint"}},
 		// What it says of a command it did.
-		"result.json":    CommandResult{Status: "succeeded", ExitCode: &zero, Output: "restarted nginx.service; it is active"},
+		"result.json": CommandResult{Status: "succeeded", ExitCode: &zero, Output: "restarted nginx.service; it is active"},
+		// A machine whose file lists configuration files sends their fingerprints
+		// (a hash and a size), which is all of them the platform ever holds.
+		"inventory-files.json": Inventory{
+			InventoryID: "5c4d3e2f1a0b99887766554433221100",
+			Files: &[]collect.Fingerprint{
+				{Path: "/etc/nginx/nginx.conf", SHA256: "3f2a91c04d1e5b7a8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d", Size: 1204},
+				{Path: "/etc/php/8.3/fpm/pool.d/www.conf", SHA256: "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90", Size: 512},
+			},
+		},
 		"metrics.json":   Batch{BatchID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0", Host: &host, Samples: samples, Services: services},
 		"inventory.json": inventory,
 	}

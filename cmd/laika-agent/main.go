@@ -242,16 +242,18 @@ func run(args []string) int {
 
 	sampler := collect.NewSampler(saved.HostRoot, saved.DiskPath)
 	runner := &agent.Runner{
-		Platform:  client.WithCredential(saved.Credential),
-		Machine:   sampler,
-		Services:  func(ctx context.Context) ([]collect.Service, error) { return collect.Services(ctx, saved.Services) },
-		Inventory: func(ctx context.Context) (protocol.Inventory, error) { return readInventory(ctx, sampler, logger), nil },
-		Version:   version,
-		Log:       logger,
+		Platform: client.WithCredential(saved.Credential),
+		Machine:  sampler,
+		Services: func(ctx context.Context) ([]collect.Service, error) { return collect.Services(ctx, saved.Services) },
+		Inventory: func(ctx context.Context) (protocol.Inventory, error) {
+			return readInventory(ctx, sampler, logger, saved.Files), nil
+		},
+		Version: version,
+		Log:     logger,
 	}
 
 	operator := &operate.Operator{Allowed: saved.Operations, Exec: operate.System{}}
-	runner.Capabilities = agent.Advertise(operator.Capabilities())
+	runner.Capabilities = agent.Advertise(capabilities(operator, saved))
 
 	logger.Printf("%s reporting to %s as server #%d (credential %s)", userAgent(), saved.URL, saved.ServerID, saved.Hint())
 
@@ -347,7 +349,7 @@ func status(args []string) int {
 	fmt.Printf("%s\n", userAgent())
 	fmt.Printf("Platform:   %s\n", saved.URL)
 	fmt.Printf("Server:     \"%s\" (#%d), agent #%d, credential %s\n", saved.ServerName, saved.ServerID, saved.AgentID, saved.Hint())
-	if names := (&operate.Operator{Allowed: saved.Operations}).Capabilities(); len(names) > 0 {
+	if names := capabilities(&operate.Operator{Allowed: saved.Operations}, saved); len(names) > 0 {
 		fmt.Printf("May do:     %s (from \"operations\" in %s)\n", strings.Join(names, ", "), *path)
 	} else {
 		fmt.Printf("May do:     nothing the platform asks (no \"operations\" in %s)\n", *path)
@@ -375,7 +377,7 @@ func status(args []string) int {
 		fmt.Printf("Services:   %d reported\n", len(services))
 	}
 
-	inventory := readInventory(context.Background(), sampler, log.New(io.Discard, "", 0))
+	inventory := readInventory(context.Background(), sampler, log.New(io.Discard, "", 0), saved.Files)
 	jobs := 0
 
 	if inventory.CronJobs != nil {
@@ -391,7 +393,7 @@ func status(args []string) int {
 // readInventory is what the machine is and what runs on it. A part that
 // cannot be read is left out, so the platform keeps what it knew of it, and
 // said once in the log.
-func readInventory(ctx context.Context, sampler *collect.Sampler, logger *log.Logger) protocol.Inventory {
+func readInventory(ctx context.Context, sampler *collect.Sampler, logger *log.Logger, files []string) protocol.Inventory {
 	hardware := sampler.Hardware(ctx)
 	inventory := protocol.Inventory{Hardware: &hardware, Addresses: collect.Addresses()}
 
@@ -413,7 +415,27 @@ func readInventory(ctx context.Context, sampler *collect.Sampler, logger *log.Lo
 		logOnce(logger, "timers are not reported: "+err.Error())
 	}
 
+	if len(files) > 0 {
+		if fingerprints, err := collect.Fingerprints(sampler.Root, files); err == nil {
+			inventory.Files = &fingerprints
+		} else {
+			logOnce(logger, "configuration files are not reported: "+err.Error())
+		}
+	}
+
 	return inventory
+}
+
+// capabilities is what the machine's own file lets the platform ask: the
+// operations it lists, and reading the fingerprints of the files it lists.
+func capabilities(operator *operate.Operator, saved config.Config) []string {
+	names := operator.Capabilities()
+
+	if len(saved.Files) > 0 {
+		names = append(names, "config.fingerprint")
+	}
+
+	return names
 }
 
 // said is what logOnce has said: a failure is worth a line in the journal

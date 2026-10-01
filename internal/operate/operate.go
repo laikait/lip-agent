@@ -21,7 +21,7 @@ import (
 // (Agent\Model\Operations): the agent lists its capabilities in it.
 var Order = []string{
 	"metrics.read", "service.status", "inventory.read",
-	"service.restart", "package.status", "package.update", "deployment.execute", "backup.create",
+	"service.restart", "package.status", "package.update", "deployment.execute", "backup.create", "config.fingerprint",
 }
 
 // Any allows every name of an operation in the config file. Only for

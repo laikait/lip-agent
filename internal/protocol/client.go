@@ -86,6 +86,10 @@ type Inventory struct {
 	Packages    []collect.Package  `json:"packages,omitempty"`
 	CronJobs    *[]collect.CronJob `json:"cronJobs,omitempty"`
 	Timers      []collect.Timer    `json:"timers,omitempty"`
+
+	// Files is the fingerprints of the files the machine's owner listed; nil
+	// when none are listed, or one could not be read.
+	Files *[]collect.Fingerprint `json:"files,omitempty"`
 }
 
 // Answer is what every reply carries: how often to call, and whether a

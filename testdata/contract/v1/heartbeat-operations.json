@@ -7,6 +7,7 @@
     "service.restart",
     "package.status",
     "package.update",
-    "backup.create"
+    "backup.create",
+    "config.fingerprint"
   ]
 }

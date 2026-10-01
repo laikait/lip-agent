@@ -164,6 +164,31 @@ the platform acknowledges it.
 | Packages | `dpkg-query`, `rpm` or `apk`, whichever answers, run directly (no shell) with a 30-second deadline. Installed ones only, at most 5,000. |
 | Cron jobs | `/etc/crontab`, `/etc/cron.d/*` and the programs in `/etc/cron.{hourly,daily,weekly,monthly}`. Users' own crontabs in `/var/spool/cron` need root and are not read. |
 | Timers | `systemctl list-units --type=timer` and `systemctl show`, run directly with a deadline |
+| Files | only the files the machine's own `"files"` list names (see below): a SHA-256 and a size each |
+
+### Configuration files: fingerprints only
+
+So that a change to Nginx or PHP-FPM can be lined up with an incident, the
+agent can tell the platform **that** a file changed, never **what it says**
+(configuration holds passwords and keys). It is off until the machine's owner
+lists files in `/etc/laika-agent/agent.json`:
+
+```json
+"files": ["/etc/nginx/nginx.conf", "/etc/php/8.3/fpm/pool.d/*.conf"]
+```
+
+- **Only what is listed is read.** A path is absolute, may have a wildcard in
+  its file name, and may not go up a directory (`..` is refused). A directory
+  or a file over 8 MiB is skipped. At most 200 files.
+- **What is sent** per file: its path, the SHA-256 of its bytes, and its size.
+  Nothing else, and never a line of it.
+- **Nothing is advertised while the list is empty.** With files listed the
+  agent advertises `config.fingerprint`.
+- A listed file that is not there is left out of the report, and the platform
+  records it as removed. A file that is there but cannot be read (permissions)
+  makes the whole part unreported, said once in the log, so the platform keeps
+  what it knew rather than seeing every file removed. Give the agent's user
+  read access to the files it is meant to fingerprint.
 
 - **A cron job's program** is the first word of its command, after any
   `NAME=value` assignments, whose values are never read. Debian's

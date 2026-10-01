@@ -39,6 +39,17 @@ type Config struct {
 	// nothing.
 	Operations map[string][]string `json:"operations,omitempty"`
 
+	// Files lists the configuration files whose fingerprint (SHA-256 and size,
+	// never content) the platform may be told, so a change to one can be lined
+	// up with an incident. An absolute path, with a wildcard allowed in its
+	// file name:
+	//
+	//	"files": ["/etc/nginx/nginx.conf", "/etc/php/8.3/fpm/pool.d/*.conf"]
+	//
+	// Nothing outside this list is read, and nothing is advertised while it is
+	// empty.
+	Files []string `json:"files,omitempty"`
+
 	// HostRoot is where the host's filesystem is, when the agent runs in a
 	// container ("/host"). DiskPath is the filesystem reported, "/" by default.
 	HostRoot string `json:"hostRoot,omitempty"`
